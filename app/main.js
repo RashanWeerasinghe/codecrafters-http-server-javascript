@@ -5,22 +5,28 @@ console.log("Logs from your program will appear here!");
 
 // Uncomment this to pass the first stage
 const server = net.createServer((socket) => {
-  socket.on("data", (data) => {
-    var message = data.toString().split("\r\n");
+  socket.on("data", (yo) => {
+    const hi = yo.toString().split("\r\n")[0].split(" ")[1];
 
-    //check for path
+    if (hi === "/") {
+      socket.write(`HTTP/1.1 200 OK\r\n\r\n`);
 
-    path = message[0].split(" ")[1];
+      socket.end();
 
-    console.log(`Path: '${path}'`);
+      return;
+    } else if (hi.startsWith("/echo/")) {
+      const resp = hi.replace("/echo/", "");
 
-    if (path === "/") {
-      socket.write("HTTP/1.1 200 OK\r\n\r\n");
-    } else {
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.write(
+        `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${resp.length}\r\n\r\n${resp}`
+      );
+
+      socket.end();
+
+      return;
     }
 
-    socket.end();
+    socket.write("HTTP/1.1 404 NOT FOUND\r\n\r\n");
   });
   socket.on("close", () => {
     socket.end();
