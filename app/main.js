@@ -10,10 +10,6 @@ const server = net.createServer((socket) => {
 
     if (hi === "/") {
       socket.write(`HTTP/1.1 200 OK\r\n\r\n`);
-
-      socket.end();
-
-      return;
     } else if (hi === "/user-agent") {
       const userAgentHEader = yo
         .toString()
@@ -25,23 +21,15 @@ const server = net.createServer((socket) => {
       socket.write(
         `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgentValue.length}\r\n\r\n${userAgentValue}`
       );
-
-      socket.end();
-
-      return;
     } else if (hi.startsWith("/echo/")) {
       const resp = hi.replace("/echo/", "");
 
       socket.write(
         `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${resp.length}\r\n\r\n${resp}`
       );
-
-      socket.end();
-
-      return;
+    } else {
+      socket.write("HTTP/1.1 404 NOT FOUND\r\n\r\n");
     }
-
-    socket.write("HTTP/1.1 404 NOT FOUND\r\n\r\n");
   });
   socket.on("close", () => {
     socket.end();
