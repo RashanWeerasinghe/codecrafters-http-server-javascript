@@ -1,63 +1,138 @@
 const net = require("net");
 const fs = require("fs");
+const path = require("path");
+
+var directory = "";
+
+// check if --directory flag is passed
+const directoryIndex = process.argv.indexOf("--directory");
+if (directoryIndex == -1 || !process.argv[directoryIndex + 1]) {
+  directory = ".";
+} else {
+  directory = process.argv[directoryIndex + 1];
+}
 
 // You can use print statements as follows for debugging, they'll be visible when running tests.
 console.log("Logs from your program will appear here!");
+console.log(`  directory: ${directory}`);
 
-const parseRequest = (requestData) => {
-  const request = requestData.toString().split("\r\n");
+// Uncomment this to pass the first stage
+const server = net.createServer((socket) => {
+  socket.on("data", (buffer) => {
+    var request = buffer.toString().split("\r\n");
+    const [method, urlpath] = request[0].split(" ");
+    // --- debug ---
+    console.log(`Path: '${urlpath}'`);
 
-  const [method, path, protocol] = request[0].split(" ");
+    var headers = {};
+    var response = "";
 
-  const headers = {};
-  request.slice(1).forEach((header) => {
-    const [key, value] = header.split(" ");
-    if (key && value) {
-      headers[key] = value;
+    switch (method) {
+      case "GET":
+        // parse headers
+        for (var line of request.slice(1)) {
+          // empty line marks end of headers
+          if (line.trim() === "") break;
+
+          // split line into key-value pair
+          var [key, ...value] = line.trim().split(":");
+          headers[key.trim()] = value.join(":").trim(); // join(':') to recontruct values wich have : inside
+        }
+        // --- debug ---
+        console.log(`headers:\n${JSON.stringify(headers)}`);
+
+        if (urlpath === "/") {
+          response = "HTTP/1.1 200 OK\r\n\r\n";
+        } else if (urlpath.trim().startsWith("/echo/")) {
+          var body = urlpath.trim().substring("/echo/".length);
+          console.log(`echo: ${body}`);
+          response = `HTTP/1.1 200 OK\r\n`;
+          response += `Content-Type: text/plain\r\n`;
+          response += `Content-Length: ${body.length}\r\n`;
+          response += `\r\n${body}`;
+        } else if (urlpath.trim().startsWith("/user-agent")) {
+          var body = headers["User-Agent"];
+          response = `HTTP/1.1 200 OK\r\n`;
+          response += `Content-Type: text/plain\r\n`;
+          response += `Content-Length: ${body.length}\r\n`;
+          response += `\r\n${body}`;
+        } else if (urlpath.trim().startsWith("/files/")) {
+          const requestedFile = path.join(
+            directory,
+            urlpath.substring("/files/".length)
+          );
+          console.log(`requestedFile: ${requestedFile}`);
+
+          // read file if exists
+          let fileExists = fs.existsSync(requestedFile);
+
+          if (fileExists) {
+            let body = fs.readFileSync(requestedFile);
+            response = "HTTP/1.1 200 OK\r\n";
+            response += "Content-Type: application/octet-stream\r\n";
+            response += `Content-Length: ${body.length}\r\n`;
+            response += `\r\n${body}`;
+          } else {
+            response = "HTTP/1.1 404 Not Found\r\n\r\n";
+          }
+        } else {
+          response = "HTTP/1.1 404 Not Found\r\n\r\n";
+        }
+        break;
+
+      case "POST":
+        // parse headers
+        for (var line of request.slice(1)) {
+          // empty line marks end of headers
+          if (line.trim() === "") break;
+
+          // split line into key-value pair
+          var [key, ...value] = line.trim().split(":");
+          headers[key.trim()] = value.join(":").trim(); // join(':') to recontruct values wich have : inside
+        }
+        // --- debug ---
+        console.log(`headers:\n${JSON.stringify(headers)}`);
+        if (urlpath.trim().startsWith("/files/")) {
+          const requestedFile = path.join(
+            directory,
+            urlpath.substring("/files/".length)
+          );
+          request = buffer.toString(); // I need original message
+          // --- debug ---
+          console.log(`POST requestedFile: ${requestedFile}`);
+          console.log(`POST message: \n${request}\n^^^^^^\n`);
+
+          // Extract file contents from the request body
+          const bodyIndex = request.indexOf("\r\n\r\n");
+          if (bodyIndex !== -1) {
+            const fileContents = request.substring(
+              bodyIndex + "\r\n\r\n".length
+            );
+            // --- debug ---
+            console.log(`POST body: ${fileContents}`);
+
+            // Save the file to the directory
+            fs.writeFileSync(requestedFile, fileContents);
+            response = "HTTP/1.1 201 Created\r\n\r\n";
+          } else {
+            response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+          }
+        } else {
+          response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+        }
+        break;
+
+      default:
+        response = "501 Not Implemented";
     }
+
+    socket.write(response);
+    socket.end();
   });
 
-  return { method, path, protocol, headers };
-};
-
-const OK_RESPONSE = "HTTP/1.1 200 OK\r\n\r\n";
-const ERROR_RESPONSE = "HTTP/1.1 404 Not found\r\n\r\n";
-
-const server = net.createServer((socket) => {
-  socket.on("data", (data) => {
-    const request = parseRequest(data);
-    const { method, path, protocol, headers } = request;
-
-    if (path === "/") {
-      socket.write(OK_RESPONSE);
-    } else if (path.startsWith("/echo")) {
-      const randomString = path.substring(6);
-      socket.write(
-        `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${randomString.length}\r\n\r\n${randomString}`
-      );
-    } else if (path.startsWith("/user-agent")) {
-      const agent = request.headers["User-Agent:"];
-      socket.write(
-        `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${agent.length}\r\n\r\n${agent}`
-      );
-    } else if (path.startsWith("/files/")) {
-      const fileName = path.replace("/files/", "").trim();
-      const filePath = process.argv[3] + fileName;
-      const isExist = fs.readdirSync(process.argv[3]).some((file) => {
-        return file === fileName;
-      });
-      if (isExist) {
-        const content = fs.readFileSync(filePath, "utf-8");
-        socket.write(
-          `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${content.length}\r\n\n${content}`
-        );
-      } else {
-        socket.write(ERROR_RESPONSE);
-        1;
-      }
-    } else socket.write(ERROR_RESPONSE);
-
+  socket.on("close", () => {
     socket.end();
+    //server.close();
   });
 });
 
