@@ -14,6 +14,21 @@ const server = net.createServer((socket) => {
       socket.end();
 
       return;
+    } else if (hi === "/user-agent") {
+      const userAgentHEader = yo
+        .toString()
+        .split("\r\n")
+        .find((line) => line.includes("User-Agent:"));
+
+      const userAgentValue = userAgentHEader.replace("User-Agent: ", "");
+
+      socket.write(
+        `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgentValue.length}\r\n\r\n${userAgentValue}`
+      );
+
+      socket.end();
+
+      return;
     } else if (hi.startsWith("/echo/")) {
       const resp = hi.replace("/echo/", "");
 
